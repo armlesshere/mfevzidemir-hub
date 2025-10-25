@@ -968,8 +968,8 @@ local function LoadScriptSafely(url, retries)
 end
 -- Enhanced Remote Validation System
 local RemoteValidator = {
-    requiredRemotes = {"Stop", "RestrictSpace", "SetColor"},
-    optionalRemotes = {"Start", "Pause", "Resume"},
+    requiredRemotes = {"Stop", "SetColor"}, -- RestrictSpace'i kaldırdık
+    optionalRemotes = {"Start", "Pause", "Resume", "RestrictSpace"}, -- RestrictSpace'i optional yaptık
     cache = {}
 }
 
@@ -1000,24 +1000,42 @@ local function ValidateRemotes()
 end
 
 local function WaitForRemotes(timeout)
-    timeout = timeout or 30
+    timeout = timeout or 15 -- Timeout'u 15 saniyeye düşürdük
     local startTime = tick()
     local foundRemotes, missingRemotes = ValidateRemotes()
     
-    while #missingRemotes > 0 and (tick() - startTime) < timeout do
-        task.wait(1)
-        foundRemotes, missingRemotes = ValidateRemotes()
-        
-        if #missingRemotes > 0 then
-            print("[Remotes] Waiting for: " .. table.concat(missingRemotes, ", "))
+    -- Sadece kritik remote'ları kontrol et
+    local criticalRemotes = {"Stop", "SetColor"}
+    local criticalMissing = {}
+    
+    for _, remoteName in ipairs(criticalRemotes) do
+        if not foundRemotes[remoteName] then
+            table.insert(criticalMissing, remoteName)
         end
     end
     
-    if #missingRemotes > 0 then
-        warn("[Remotes] Timeout waiting for: " .. table.concat(missingRemotes, ", "))
-        return false, missingRemotes
+    while #criticalMissing > 0 and (tick() - startTime) < timeout do
+        task.wait(1)
+        foundRemotes, missingRemotes = ValidateRemotes()
+        
+        -- Sadece kritik remote'ları tekrar kontrol et
+        criticalMissing = {}
+        for _, remoteName in ipairs(criticalRemotes) do
+            if not foundRemotes[remoteName] then
+                table.insert(criticalMissing, remoteName)
+            end
+        end
+        
+        if #criticalMissing > 0 then
+            print("[Remotes] Waiting for critical remotes: " .. table.concat(criticalMissing, ", "))
+        end
+    end
+    
+    if #criticalMissing > 0 then
+        warn("[Remotes] Critical remotes not found: " .. table.concat(criticalMissing, ", ") .. " - Proceeding anyway")
+        return true, foundRemotes -- Kritik olmayan remote'lar eksik olsa bile devam et
     else
-        print("[Remotes] All required remotes found!")
+        print("[Remotes] All critical remotes found!")
         return true, foundRemotes
     end
 end
@@ -1031,30 +1049,26 @@ local scriptLoaded = false
 if currentGame then
     print("Detected Game: " .. currentGame.name)
     
-    -- Wait for required remotes before loading script
-    local remotesReady, foundRemotes = WaitForRemotes(15)
+    -- Wait for critical remotes (non-blocking)
+    local remotesReady, foundRemotes = WaitForRemotes(10)
     
-    if remotesReady then
-        print("Remotes validated, proceeding with script loading...")
+    print("Proceeding with script loading...")
+    
+    -- Try primary script
+    local success, message = LoadScriptSafely(currentGame.script)
+    if success then
+        scriptLoaded = true
+        print("Primary script loaded successfully")
         
-        -- Try primary script
-        local success, message = LoadScriptSafely(currentGame.script)
-        if success then
-            scriptLoaded = true
-            print("Primary script loaded successfully")
-            
-            -- Load secondary script if available
-            if currentGame.secondary then
-                task_spawn(function()
-                    task_wait(0.5) -- Small delay
-                    LoadScriptSafely(currentGame.secondary)
-                end)
-            end
-        else
-            warn("Primary script failed: " .. message)
+        -- Load secondary script if available
+        if currentGame.secondary then
+            task_spawn(function()
+                task_wait(0.5) -- Small delay
+                LoadScriptSafely(currentGame.secondary)
+            end)
         end
     else
-        warn("Required remotes not found, skipping script loading")
+        warn("Primary script failed: " .. message)
     end
 else
     warn("Unsupported game detected. PlaceId: " .. game.PlaceId .. ", GameId: " .. game.GameId)
