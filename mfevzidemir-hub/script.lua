@@ -870,7 +870,23 @@ local function LoadScriptSafely(url, retries)
         
         if success and result then
             local loadSuccess, loadResult = pcall(function()
-                return loadstring(result)()
+                -- Enhanced error handling for remote conflicts
+                local originalWarn = warn
+                local warningCount = 0
+                
+                -- Temporarily suppress duplicate remote warnings
+                warn = function(message)
+                    if not string.find(message, "Duplicate named remote") then
+                        originalWarn(message)
+                    end
+                end
+                
+                local scriptResult = loadstring(result)()
+                
+                -- Restore original warn function
+                warn = originalWarn
+                
+                return scriptResult
             end)
             
             if loadSuccess then
@@ -889,6 +905,62 @@ local function LoadScriptSafely(url, retries)
     
     return false, "All attempts failed"
 end
+-- Enhanced Remote Validation System
+local RemoteValidator = {
+    requiredRemotes = {"Stop", "RestrictSpace", "SetColor"},
+    optionalRemotes = {"Start", "Pause", "Resume"},
+    cache = {}
+}
+
+local function ValidateRemotes()
+    local ReplicatedStorage = game:GetService("ReplicatedStorage")
+    local missingRemotes = {}
+    local foundRemotes = {}
+    
+    -- Check for required remotes
+    for _, remoteName in ipairs(RemoteValidator.requiredRemotes) do
+        local remote = ReplicatedStorage:FindFirstChild(remoteName)
+        if remote then
+            foundRemotes[remoteName] = remote
+        else
+            table.insert(missingRemotes, remoteName)
+        end
+    end
+    
+    -- Check for optional remotes
+    for _, remoteName in ipairs(RemoteValidator.optionalRemotes) do
+        local remote = ReplicatedStorage:FindFirstChild(remoteName)
+        if remote then
+            foundRemotes[remoteName] = remote
+        end
+    end
+    
+    return foundRemotes, missingRemotes
+end
+
+local function WaitForRemotes(timeout)
+    timeout = timeout or 30
+    local startTime = tick()
+    local foundRemotes, missingRemotes = ValidateRemotes()
+    
+    while #missingRemotes > 0 and (tick() - startTime) < timeout do
+        task.wait(1)
+        foundRemotes, missingRemotes = ValidateRemotes()
+        
+        if #missingRemotes > 0 then
+            print("[Remotes] Waiting for: " .. table.concat(missingRemotes, ", "))
+        end
+    end
+    
+    if #missingRemotes > 0 then
+        warn("[Remotes] Timeout waiting for: " .. table.concat(missingRemotes, ", "))
+        return false, missingRemotes
+    else
+        print("[Remotes] All required remotes found!")
+        return true, foundRemotes
+    end
+end
+
 -- Enhanced Game Detection and Script Loading
 task_wait(5)
 
@@ -898,21 +970,30 @@ local scriptLoaded = false
 if currentGame then
     print("Detected Game: " .. currentGame.name)
     
-    -- Try primary script
-    local success, message = LoadScriptSafely(currentGame.script)
-    if success then
-        scriptLoaded = true
-        print("Primary script loaded successfully")
+    -- Wait for required remotes before loading script
+    local remotesReady, foundRemotes = WaitForRemotes(15)
+    
+    if remotesReady then
+        print("Remotes validated, proceeding with script loading...")
         
-        -- Load secondary script if available
-        if currentGame.secondary then
-            task_spawn(function()
-                task_wait(0.5) -- Small delay
-                LoadScriptSafely(currentGame.secondary)
-            end)
+        -- Try primary script
+        local success, message = LoadScriptSafely(currentGame.script)
+        if success then
+            scriptLoaded = true
+            print("Primary script loaded successfully")
+            
+            -- Load secondary script if available
+            if currentGame.secondary then
+                task_spawn(function()
+                    task_wait(0.5) -- Small delay
+                    LoadScriptSafely(currentGame.secondary)
+                end)
+            end
+        else
+            warn("Primary script failed: " .. message)
         end
     else
-        warn("Primary script failed: " .. message)
+        warn("Required remotes not found, skipping script loading")
     end
 else
     warn("Unsupported game detected. PlaceId: " .. game.PlaceId .. ", GameId: " .. game.GameId)

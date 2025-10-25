@@ -870,7 +870,23 @@ local function LoadScriptSafely(url, retries)
         
         if success and result then
             local loadSuccess, loadResult = pcall(function()
-                return loadstring(result)()
+                -- Enhanced error handling for remote conflicts
+                local originalWarn = warn
+                local warningCount = 0
+                
+                -- Temporarily suppress duplicate remote warnings
+                warn = function(message)
+                    if not string.find(message, "Duplicate named remote") then
+                        originalWarn(message)
+                    end
+                end
+                
+                local scriptResult = loadstring(result)()
+                
+                -- Restore original warn function
+                warn = originalWarn
+                
+                return scriptResult
             end)
             
             if loadSuccess then
