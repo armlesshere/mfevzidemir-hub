@@ -819,6 +819,57 @@ SafeExecute(function()
         sound:Play()
     end)
 end, "Sound Playback")
+-- Global Warning Suppression System
+local GlobalSuppression = {
+    enabled = true,
+    suppressedMessages = {
+        "Duplicate named remote",
+        "not added to cache",
+        "RemoteEvent",
+        "RemoteFunction"
+    }
+}
+
+local function SetupGlobalSuppression()
+    if not GlobalSuppression.enabled then return end
+    
+    local originalWarn = warn
+    local originalPrint = print
+    
+    -- Override warn function globally
+    warn = function(message)
+        local shouldSuppress = false
+        for _, suppressedMsg in ipairs(GlobalSuppression.suppressedMessages) do
+            if string.find(message, suppressedMsg) then
+                shouldSuppress = true
+                break
+            end
+        end
+        
+        if not shouldSuppress then
+            originalWarn(message)
+        end
+    end
+    
+    -- Override print function globally
+    print = function(message)
+        local shouldSuppress = false
+        for _, suppressedMsg in ipairs(GlobalSuppression.suppressedMessages) do
+            if string.find(message, suppressedMsg) then
+                shouldSuppress = true
+                break
+            end
+        end
+        
+        if not shouldSuppress then
+            originalPrint(message)
+        end
+    end
+end
+
+-- Setup global suppression early
+SetupGlobalSuppression()
+
 -- Enhanced Game Detection System
 local GameDatabase = {
     -- Popular Games Database
@@ -872,19 +923,29 @@ local function LoadScriptSafely(url, retries)
             local loadSuccess, loadResult = pcall(function()
                 -- Enhanced error handling for remote conflicts
                 local originalWarn = warn
-                local warningCount = 0
+                local originalPrint = print
                 
-                -- Temporarily suppress duplicate remote warnings
+                -- Suppress all duplicate remote warnings globally
                 warn = function(message)
-                    if not string.find(message, "Duplicate named remote") then
+                    if not string.find(message, "Duplicate named remote") and 
+                       not string.find(message, "not added to cache") then
                         originalWarn(message)
+                    end
+                end
+                
+                -- Also suppress print statements that might show warnings
+                print = function(message)
+                    if not string.find(message, "Duplicate named remote") and 
+                       not string.find(message, "not added to cache") then
+                        originalPrint(message)
                     end
                 end
                 
                 local scriptResult = loadstring(result)()
                 
-                -- Restore original warn function
+                -- Restore original functions
                 warn = originalWarn
+                print = originalPrint
                 
                 return scriptResult
             end)
