@@ -11,7 +11,7 @@
 Execute this single line in your Roblox executor:
 
 ```lua
-loadstring(game:HttpGet("https://raw.githubusercontent.com/armlesshere/mfevzidemir-hub/main/mfevzidemir.lua"))()
+loadstring(game:HttpGet("https://raw.githubusercontent.com/armlesshere/mfevzidemir-hub/tree/main/mfevzidemir.lua"))()
 ```
 
 ## 📁 Repository Structure
@@ -168,3 +168,4 @@ We welcome contributions! Please:
 ---
 
 **⭐ Star this repository if you found it helpful!**
+
